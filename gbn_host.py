@@ -77,7 +77,7 @@ class GBNHost():
                 self.simulator.start_timer(self.entity, self.timer_interval)
 
             self.next_seq_num += 1
-            
+
         pass
 
 
@@ -108,8 +108,49 @@ class GBNHost():
         Returns:
             nothing        
         """
-        pass
-    
+        try:
+            pac_dict = self.unpack_pkt(packet)
+        except struct.error:
+            self.simulator.pass_to_network_layer(self.entity, self.last_ack_pkt)
+            return
+
+        if self.is_corrupt(packet):
+            self.simulator.pass_to_network_layer(self.entity, self.last_ack_pkt)
+            return
+        if pac_dict["packet_type"] == 0x0:
+            if pac_dict["seq_num"] == self.expected_seq_num:
+                payload = pac_dict["payload"]
+                self.simulator.pass_to_application_layer(self.entity, payload)
+
+                ack_pkt = self.create_ack_pkt(self.expected_seq_num)
+                self.simulator.pass_to_network_layer(self.entity, ack_pkt)
+                self.last_ack_pkt = ack_pkt
+                self.expected_seq_num += 1
+            else:
+                self.simulator.pass_to_network_layer(self.entity, self.last_ack_pkt)
+        elif pac_dict["packet_type"] == 0x1:
+            ack_seq_num = pac_dict["seq_num"]
+
+            if ack_seq_num >= self.window_base and ack_seq_num != MAX_UNSIGNED_INT:
+                self.window_base = ack_seq_num + 1
+                if self.window_base == self.next_seq_num:
+                    self.simulator.stop_timer(self.entity)
+                else:
+                    self.simulator.stop_timer(self.entity)
+                    self.simulator.start_stimer(self.entity, self.timer_interval)
+                
+                while len(self.app_layer_buffer) > 0 and (self.next_seq_num - self.window_base) < self.window_size:
+                    payload = self.app_layer_buffer.pop(0)
+                    new_packet = self.create_data_pkt(self.next_seq_num, payload)
+                    buffer_index = self.next_seq_num % self.window_size
+                    self.unacked_buffer[buffer_index] = new_packet
+                    self.simulator_to_network_layer(self.entity, new_packet)
+
+                    if self.window_base == self.next_seq_num:
+                        self.simulator.start_timer(self.entity, self.timer_interval)
+                    
+                    self.next_seq_num +=1
+
 
 
     def timer_interrupt(self):
