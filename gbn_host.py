@@ -63,6 +63,21 @@ class GBNHost():
         Returns:
             nothing        
         """
+        #make sure thw window isnt full
+        if(self.next_seq_num - self.window_base) >= self.window_size:
+            self.app_layer_buffer.append(payload)
+        else:
+            packet = self.create_data_pkt(self.next_seq_num, payload)
+
+            buff_index = self.next_seq_num % self.window_size
+            self.unacked_buffer[buff_index] = packet
+            self.simulator.pass_to_network_layer(self.entity, packet)
+
+            if self.window_base == self.next_seq_num:
+                self.simulator.start_timer(self.entity, self.timer_interval)
+
+            self.next_seq_num += 1
+            
         pass
 
 
