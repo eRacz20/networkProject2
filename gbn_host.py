@@ -205,7 +205,8 @@ class GBNHost():
 
         checksum = self.create_checksum(tmpPkt)
         finalPkt = pack(f'HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
-    
+
+        return finalPkt
 
     
     def create_ack_pkt(self, seq_num):
@@ -226,7 +227,13 @@ class GBNHost():
         Returns:
             bytes: a bytes object containing the required fields for a data packet
         """
-        pass
+        pktType = 0x1
+
+        tempPkt = pack('HIH', pktType, seq_num, 0)
+        checksum = self.create_checksum(tempPkt)
+
+        finalPkt = pack('HIH', pktType, seq_num, checksum)
+        return finalPkt
 
 
 
