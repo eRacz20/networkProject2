@@ -168,7 +168,12 @@ class GBNHost():
         Returns:
             None        
         """
-        pass
+        self.simulator.start_timer(self.entity, self.timer_interval)
+    
+        for i in range(self.window_size):
+            packet = self.unacked_buffer[i]
+            if packet is not None:
+                self.simulator.pass_to_network_layer(self.entity, packet)
 
         
     
