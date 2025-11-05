@@ -169,9 +169,9 @@ class GBNHost():
             None        
         """
         self.simulator.start_timer(self.entity, self.timer_interval)
-    
-        for i in range(self.window_size):
-            packet = self.unacked_buffer[i]
+     
+        for i in range(self.base, self.nextseqnum):
+            packet = self.unacked_buffer[i % self.window_size]
             if packet is not None:
                 self.simulator.pass_to_network_layer(self.entity, packet)
 
@@ -197,7 +197,14 @@ class GBNHost():
         Returns:
             bytes: a bytes object containing the required fields for a data packet
         """
-        pass
+        pack_type = 0x0
+        payloadLen = len(payload)
+        payloadBytes = payload.encode('utf-8')
+
+        tempPkt = pack(f'HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
+
+        checksum = self.create_checksum(tmpPkt)
+        finalPkt = pack(f'HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
     
 
     
