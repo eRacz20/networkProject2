@@ -119,7 +119,7 @@ class GBNHost():
             return
         if pac_dict["packet_type"] == 0x0:
             if pac_dict["seq_num"] == self.expected_seq_num:
-                payload = pac_dict["payload"]
+                payload = pac_dict["payload"].decode('utf-8')
                 self.simulator.pass_to_application_layer(self.entity, payload)
 
                 ack_pkt = self.create_ack_pkt(self.expected_seq_num)
@@ -137,14 +137,14 @@ class GBNHost():
                     self.simulator.stop_timer(self.entity)
                 else:
                     self.simulator.stop_timer(self.entity)
-                    self.simulator.start_stimer(self.entity, self.timer_interval)
+                    self.simulator.start_timer(self.entity, self.timer_interval)
                 
                 while len(self.app_layer_buffer) > 0 and (self.next_seq_num - self.window_base) < self.window_size:
                     payload = self.app_layer_buffer.pop(0)
                     new_packet = self.create_data_pkt(self.next_seq_num, payload)
                     buffer_index = self.next_seq_num % self.window_size
                     self.unacked_buffer[buffer_index] = new_packet
-                    self.simulator_to_network_layer(self.entity, new_packet)
+                    self.simulator.pass_to_network_layer(self.entity, new_packet)
 
                     if self.window_base == self.next_seq_num:
                         self.simulator.start_timer(self.entity, self.timer_interval)
@@ -170,7 +170,7 @@ class GBNHost():
         """
         self.simulator.start_timer(self.entity, self.timer_interval)
      
-        for i in range(self.base, self.nextseqnum):
+        for i in range(self.window_base, self.next_seq_num):
             packet = self.unacked_buffer[i % self.window_size]
             if packet is not None:
                 self.simulator.pass_to_network_layer(self.entity, packet)
@@ -201,10 +201,10 @@ class GBNHost():
         payloadLen = len(payload)
         payloadBytes = payload.encode('utf-8')
 
-        tempPkt = pack(f'HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
+        tempPkt = pack(f'!HIHI{payloadLen}s', pack_type, seq_num, 0, payloadLen, payloadBytes)
 
-        checksum = self.create_checksum(tmpPkt)
-        finalPkt = pack(f'HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
+        checksum = self.create_checksum(tempPkt)
+        finalPkt = pack(f'!HIHI{payloadLen}s', pack_type, seq_num, checksum, payloadLen, payloadBytes)
 
         return finalPkt
 
@@ -229,10 +229,10 @@ class GBNHost():
         """
         pktType = 0x1
 
-        tempPkt = pack('HIH', pktType, seq_num, 0)
+        tempPkt = pack('!HIH', pktType, seq_num, 0)
         checksum = self.create_checksum(tempPkt)
 
-        finalPkt = pack('HIH', pktType, seq_num, checksum)
+        finalPkt = pack('!HIH', pktType, seq_num, checksum)
         return finalPkt
 
 
@@ -251,7 +251,19 @@ class GBNHost():
         Returns:
             int: the checksum value
         """
-        pass
+        if len(packet) % 2 == 1:
+            packet += b'\x00'
+        checksum = 0
+
+        for i in range(0, len(packet), 2):
+            word = (packet[i] << 8) + packet[i + 1]
+            checksum += word
+            
+            checksum = (checksum & 0xFFFF) + (checksum >> 16)
+        
+        checksum = ~checksum & 0xFFFF
+
+        return checksum
 
     
     
@@ -279,7 +291,22 @@ class GBNHost():
         Returns:
             dictionary: a dictionary containing the different values stored in the packet
         """
-        pass
+        pkt_type, seq_num, checksum = unpack('!HIH', packet[:8])
+
+        result = {"packet_type": pkt_type, 
+                "seq_num": seq_num,
+                "checksum": checksum
+        }
+
+
+        if pkt_type == 0x0:
+            payload_len = unpack('!I', packet[8:12])[0]
+            payload_bytes = unpack(f'!{payload_len}s', packet[12:12+payload_len])[0]
+
+            result["payload_length"] = payload_len
+            result["payload"] = payload_bytes
+
+        return result
 
     
     
@@ -295,4 +322,10 @@ class GBNHost():
         Returns:
             bool: whether or not the packet data has been corrupted
         """
-        pass
+        receivedChecksum = unpack('!H', packet[6:8])[0]
+
+        pktNoCheck = packet[:6] + b'\x00\x00' + packet[8:]
+
+        calcCheck = self.create_checksum(pktNoCheck)
+
+        return receivedChecksum !=calcCheck
